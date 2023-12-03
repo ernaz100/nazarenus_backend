@@ -1,0 +1,4 @@
+{
+    "appService.defaultWebAppToDeploy": "/subscriptions/2a4e5100-0c38-4b3f-bfe9-289a9dcb4eeb/resourceGroups/appsvc_linux_centralus/providers/Microsoft.Web/sites/nazarenus-backend",
+    "appService.deploySubpath": "."
+}
