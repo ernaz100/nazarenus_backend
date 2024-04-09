@@ -1,68 +1,82 @@
 from flask import Flask, request, jsonify
 import cv2
 import numpy as np
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
+import torch
+from models.number_classify.MLP import MLP
+from torchvision import transforms
+from models.number_classify.SimpleCNN import SimpleCNN
 
 app = Flask(__name__)
 CORS(app)
 app.config['DEBUG'] = False
-
-def softmax(x):
-    z = x - np.max(x, axis=-1, keepdims=True)
-    numerator = np.exp(z)
-    denominator = np.sum(numerator, axis=-1, keepdims=True)
-    return numerator / denominator
+app.config['CORS_HEADERS'] = 'Content-Type'
 
 def preprocess_image(image):
     try:
-        # Resize the image to 28 × 28 pixels
-        image = cv2.resize(image, (28, 28))
-
+        # Define the transformation for the input image
+        transform = transforms.Compose([
+            transforms.ToPILImage(),  # Convert NumPy array to PIL Image
+            transforms.Resize((28, 28)),  # Resize to 28x28 pixels
+            transforms.ToTensor(),  # Convert PIL Image to PyTorch tensor
+            transforms.Normalize((0.5,), (0.5,))  # Normalize pixel values to [-1, 1]
+        ])
         # Invert pixel values
         image = 255 - image
-        # Convert pixel values to floating-point numbers
-        image = image.astype(np.float32)
-        # Normalize pixel values to a range between 0 and 1
-        image /= 255.0
-        return np.array([image])
+
+        image_tensor = transform(image)  # Apply transformation
+        return image_tensor.unsqueeze(0)  # Add batch dimension (1, 1, 28, 28)
+
     except Exception as e:
         print(f"Error in preprocess_image: {e}")
         return None
 
-
 @app.route('/predict', methods=['POST'])
+@cross_origin()
 def predict_number_class():
-    app.logger.warning("Prediction:")
+    # Load MLP model
+    mlp_model_path = 'models/number_classify/mlp.pth'
+    mlp_model = MLP()
+    checkpoint_mlp = torch.load(mlp_model_path)
+    mlp_model.load_state_dict(checkpoint_mlp['model_state_dict'])
+    mlp_model.eval()
+
+    # Load CNN model
+    cnn_model_path = 'models/number_classify/cnn.pth'
+    cnn_model = SimpleCNN()
+    checkpoint_cnn = torch.load(cnn_model_path)
+    cnn_model.load_state_dict(checkpoint_cnn['model_state_dict'])
+    cnn_model.eval()
+
     try:
         # Get the image file from the request
         image_file = request.files['image']
-        #image_file.save("./uploads/" + image_file.filename)
         # Read the image file
         image_data = image_file.read()
         # Decode the image data and convert to NumPy array
         image_array = np.frombuffer(image_data, dtype=np.uint8)
 
+        # Convert image array to grayscale
         image = cv2.imdecode(image_array, cv2.IMREAD_GRAYSCALE)
 
         if image is not None:
-            # Preprocess the image
+            # Preprocess the image for both models
             preprocessed_image = preprocess_image(image)
-            #cv2.imwrite('./uploads/preprocessed_image.png', preprocessed_image[0] * 255)
             if preprocessed_image is not None:
-                # Flatten Image to 1x784 vector
-                flat_image = np.reshape(preprocessed_image, (preprocessed_image.shape[0], -1)).astype('float')
+                # Perform inference with MLP model
+                with torch.no_grad():
+                    mlp_predictions = torch.softmax(mlp_model(preprocessed_image), dim=1).tolist()
 
-                # Load model weights and offset
-                loaded_weights = np.load('./models/number_classify/model_weights.npy')
-                loaded_offset = np.load('./models/number_classify/model_offset.npy')
-                y_hat = softmax(flat_image @ loaded_weights + loaded_offset)
-                print(y_hat)
-                # Make a prediction using your ML model
-                predicted_class = np.argmax(y_hat)
-                #Return y_hat
-                return jsonify(y_hat.tolist())
-                # Return only the predicted number as an integer
-                #return str(predicted_class)
+                # Perform inference with CNN model
+                with torch.no_grad():
+                    cnn_predictions = torch.softmax(cnn_model(preprocessed_image), dim=1).tolist()
+
+                # Combine predictions into a single JSON response
+                response = {
+                    'mlp_predictions': mlp_predictions,
+                    'cnn_predictions': cnn_predictions
+                }
+                return jsonify(response)
             else:
                 return "Error in preprocessing the image", 500
         else:
