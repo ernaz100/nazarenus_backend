@@ -86,5 +86,9 @@ def predict_number_class():
         app.logger.warning(f"Error in predict_number_class: {e}")
         return "Internal Server Error", 500
 
-if __name__ == '__main__':
-    app.run(debug=False)
+@app.route("/")
+def hello():
+    return "<h1 style='color:blue'>Hello There!</h1>"
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0')
