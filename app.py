@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_mail import Mail, Message
 import cv2
 import numpy as np
 from flask_cors import CORS, cross_origin
@@ -11,7 +12,11 @@ app = Flask(__name__)
 CORS(app)
 app.config['DEBUG'] = False
 app.config['CORS_HEADERS'] = 'Content-Type'
+from dotenv import load_dotenv
+import os
 
+# Load environment variables from .env file
+load_dotenv()
 def preprocess_image(image):
     try:
         # Define the transformation for the input image
@@ -90,5 +95,39 @@ def predict_number_class():
 def hello():
     return "<h1 style='color:blue'>Hello There!</h1>"
 
+# Configure Flask-Mail settings using environment variables
+app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER')
+app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT'))
+app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS').lower() in ['true', '1', 'yes']
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+mail = Mail(app)
+@app.route('/contact', methods=['POST'])
+@cross_origin()
+def contact_form():
+    name = request.form.get('name')
+    concern = request.form.get('concern')
+    message = request.form.get('message')
+    contact = request.form.get('contact')
+
+    # Send email
+    try:
+        subject = f"Contact Form: Message from {name} - {concern}"
+        body = f"Contact Info: {contact} Message: {message}"
+
+        msg = Message(subject=subject,
+                      sender='nazarenusen@gmail.com',
+                      recipients=['nazarenuseric@gmail.com'])
+        msg.body = body
+
+        mail.send(msg)
+
+        return jsonify({'message': 'Email sent successfully!'}), 200
+
+    except Exception as e:
+        app.logger.warning(f"Error in contact: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == "__main__":
-    app.run(host='0.0.0.0')
+    app.run(host=os.getenv('HOST'))

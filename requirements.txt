@@ -3,6 +3,7 @@ click==8.1.7
 filelock==3.13.3
 Flask==3.0.0
 Flask-Cors==4.0.0
+Flask-Mail==0.9.1
 fsspec==2024.3.1
 gunicorn==21.2.0
 importlib-metadata==6.9.0
@@ -15,6 +16,7 @@ numpy==1.24.4
 opencv-python-headless==4.8.1.78
 packaging==24.0
 pillow==10.3.0
+python-dotenv==1.0.1
 sympy==1.12
 torch==2.2.2
 torchvision==0.17.2
