@@ -7,16 +7,73 @@ import torch
 from models.number_classify.MLP import MLP
 from torchvision import transforms
 from models.number_classify.SimpleCNN import SimpleCNN
-
-app = Flask(__name__)
-CORS(app)
-app.config['DEBUG'] = False
-app.config['CORS_HEADERS'] = 'Content-Type'
 from dotenv import load_dotenv
 import os
+import socketio
+import eventlet
+from mongoengine import Document, StringField, DictField, connect
+
+app = Flask(__name__)
+app.config['DEBUG'] = False
+app.config['CORS_HEADERS'] = 'Content-Type'
+CORS(app)
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Connect mongoengine to MongoDB
+connect('portfolio', host='mongodb://localhost:27017')
+
+# Define MongoDB Document Model
+class MyDocument(Document):
+    _id = StringField(primary_key=True)
+    data = DictField()
+
+### Web Socket
+# Enable CORS for WebSocket handshake requests
+sio = socketio.Server(cors_allowed_origins='http://localhost:3000')
+
+# Socket.IO endpoint
+@sio.on('connect')
+def connect_socketio(sid, environ):
+    print('Client connected to Socket.IO:', sid)
+
+@sio.on('disconnect')
+def disconnect_socketio(sid):
+    print('Client disconnected from Socket.IO:', sid)
+
+def find_or_create_document(document_id):
+    document = MyDocument.objects(_id=document_id).first()
+    if not document:
+        # Document does not exist, create a new one
+        new_document = MyDocument(_id=document_id, data={})
+        new_document.save()
+        print(f'New Document created: {document_id}')
+        return new_document
+    else:
+        # Document exists, return the document data
+        print(f'Retrieved Document: {document._id} - {document.data}')
+        return document
+
+@sio.on('get-doc')
+def handle_get_document(sid, document_id):
+    document = find_or_create_document(document_id)
+    sio.enter_room(sid, document_id)
+    sio.emit('load-doc', document.data, room=sid)
+
+    @sio.on('send-changes')
+    def handle_send_changes(sid, delta):
+        sio.emit('receive-changes', delta, room=document_id, skip_sid=sid)
+
+    @sio.on('save-document')
+    def handle_save_document(sid, data):
+        document = MyDocument.objects(_id=document_id).first()
+        if document:
+            document.update(set__data=data)
+            print(f'Updated document {document_id} with data: {data}')
+        else:
+            print(f'Document {document_id} not found')
+
 def preprocess_image(image):
     try:
         # Define the transformation for the input image
@@ -51,7 +108,6 @@ def predict_number_class():
     cnn_model = SimpleCNN()
     checkpoint_cnn = torch.load(cnn_model_path)
     cnn_model.load_state_dict(checkpoint_cnn['model_state_dict'])
-    cnn_model.eval()
 
     try:
         # Get the image file from the request
@@ -102,6 +158,7 @@ app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS').lower() in ['true', '1', 
 app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 mail = Mail(app)
+
 @app.route('/contact', methods=['POST'])
 @cross_origin()
 def contact_form():
@@ -130,4 +187,8 @@ def contact_form():
 
 
 if __name__ == "__main__":
-    app.run(host=os.getenv('HOST'))
+    # Wrap Flask application with Socket.IO
+    app = socketio.WSGIApp(sio, app)
+
+    # Run Flask application with Socket.IO support using eventlet
+    eventlet.wsgi.server(eventlet.listen(('0.0.0.0', 5001)), app)
