@@ -31,7 +31,7 @@ class MyDocument(Document):
 
 ### Web Socket
 # Enable CORS for WebSocket handshake requests
-sio = socketio.Server(cors_allowed_origins='http://localhost:3000')
+sio = socketio.Server(cors_allowed_origins='*')
 
 # Socket.IO endpoint
 @sio.on('connect')
@@ -191,4 +191,4 @@ if __name__ == "__main__":
     app = socketio.WSGIApp(sio, app)
 
     # Run Flask application with Socket.IO support using eventlet
-    eventlet.wsgi.server(eventlet.listen(('0.0.0.0', 5001)), app)
+    eventlet.wsgi.server(eventlet.listen(('0.0.0.0', int(os.getenv('PORT')))), app)
