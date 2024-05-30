@@ -4,17 +4,17 @@ import cv2
 import numpy as np
 from flask_cors import CORS, cross_origin
 import torch
+import anthropic
 from models.number_classify.MLP import MLP
 from torchvision import transforms
 from models.number_classify.SimpleCNN import SimpleCNN
+from dotenv import load_dotenv
+import os
 
 app = Flask(__name__)
 CORS(app)
 app.config['DEBUG'] = False
 app.config['CORS_HEADERS'] = 'Content-Type'
-from dotenv import load_dotenv
-import os
-
 # Load environment variables from .env file
 load_dotenv()
 def preprocess_image(image):
@@ -128,6 +128,175 @@ def contact_form():
         app.logger.warning(f"Error in contact: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+
+@app.route('/generate-message', methods=['POST'])
+@cross_origin()
+def generate_message():
+    try:
+        # Ensure that the request contains necessary data
+        if 'content' not in request.json:
+            return jsonify({'error': 'Content field is required'}), 400
+
+        # API Key for Anthropictext API
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'error': 'API Key not found'}), 500
+        client = anthropic.Anthropic(api_key=api_key,)
+
+        message = client.beta.tools.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=1024,
+            system="You are my writing assistant. I want you to generate a project outline. Make sure to take the tone (formal, scientific, comedic etc.) into account.",
+            tools=[
+                {
+                    "name": "get_outline",
+                    "description": "Get the outline for a writing project",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "title": {
+                                "type": "string",
+                                "description": "The proposed title for the writing project",
+                            },
+                            "outline": {
+                                "type": "string",
+                                "description": "The proposed outline for the writing project",
+                            },
+
+                        },
+                        "required": ["title", "outline"],
+                    },
+                }
+            ],
+            messages=[
+                {"role": "user", "content": request.json['content']}
+            ]
+        )
+        if message:
+            if(type(message.content[0]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
+                return jsonify({'message': message.content[0].input}), 200
+            elif(type(message.content[1]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
+                return jsonify({'message': message.content[1].input}), 200
+            elif(type(message.content[2]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
+                return jsonify({'message': message.content[2].input}), 200
+
+        else:
+            return jsonify({'error': 'Failed to generate message in backend'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/complete-sentence', methods=['POST'])
+@cross_origin()
+def complete_sentence():
+    try:
+        # Ensure that the request contains necessary data
+        if 'content' not in request.json:
+            return jsonify({'error': 'Content field is required'}), 400
+
+        # API Key for Anthropictext API
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'error': 'API Key not found'}), 500
+        client = anthropic.Anthropic(api_key=api_key,)
+
+        message = client.beta.tools.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=1024,
+            tools=[
+                {
+                    "name": "complete_sentence",
+                    "description": "Complete the last sentence of the text that I'm writing.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "end_of_sentence": {
+                                "type": "string",
+                                "description": "The end of the sentence. Just the part that we append to the existing text.",
+                            },
+
+                        },
+                        "required": ["end_of_sentence"],
+                    },
+                }
+            ],
+            messages=[
+                {"role": "user", "content": request.json['content']}
+            ]
+        )
+        if message:
+            if(type(message.content[0]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
+                return jsonify({'message': message.content[0].input}), 200
+            elif(type(message.content[1]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
+                return jsonify({'message': message.content[1].input}), 200
+            elif(type(message.content[2]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
+                return jsonify({'message': message.content[2].input}), 200
+
+        else:
+            return jsonify({'error': 'Failed to generate message in backend'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/rephrase-sentence', methods=['POST'])
+@cross_origin()
+def rephrase_sentence():
+    try:
+        # Ensure that the request contains necessary data
+        if 'content' not in request.json:
+            return jsonify({'error': 'Content field is required'}), 400
+
+        # API Key for Anthropictext API
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'error': 'API Key not found'}), 500
+        client = anthropic.Anthropic(api_key=api_key,)
+
+        message = client.beta.tools.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=1024,
+            system="You are my writing assistant. I want you to rephrase the text that I'm writing. I want you to give me 3 different versions. Make sure to take the tone (formal, scientific, comedic etc.) into account.",
+
+            tools=[
+                {
+                    "name": "rephrase_sentence",
+                    "description": "Please rephrase the text that I'm writing. I want you to give me 3 different versions",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "rephrased_v1": {
+                                "type": "string",
+                                "description": "The first rephrased version of the provided text.",
+                            },
+                            "rephrased_v2": {
+                                "type": "string",
+                                "description": "The second rephrased version of the provided text.",
+                            },
+                            "rephrased_v3": {
+                                "type": "string",
+                                "description": "The third rephrased version of the provided text.",
+                            },
+
+                        },
+                        "required": ["rephrased_v1, rephrased_v2, rephrased_v3"],
+                    },
+                }
+            ],
+            messages=[
+                {"role": "user", "content": request.json['content']}
+            ]
+        )
+        if message:
+            if(type(message.content[0]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
+                return jsonify({'message': message.content[0].input}), 200
+            elif(type(message.content[1]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
+                return jsonify({'message': message.content[1].input}), 200
+            elif(type(message.content[2]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
+                return jsonify({'message': message.content[2].input}), 200
+
+        else:
+            return jsonify({'error': 'Failed to generate message in backend'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host=os.getenv('HOST'))
