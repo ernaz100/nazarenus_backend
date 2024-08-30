@@ -1,4 +1,6 @@
-from flask import Flask, request, jsonify
+import json
+
+from flask import Flask, request, jsonify, send_file, make_response, url_for, stream_with_context, Response
 from flask_mail import Mail, Message
 import cv2
 import numpy as np
@@ -11,12 +13,16 @@ from models.number_classify.SimpleCNN import SimpleCNN
 from dotenv import load_dotenv
 import os
 
+from radiance import generate_clip
+
 app = Flask(__name__)
 CORS(app)
 app.config['DEBUG'] = False
 app.config['CORS_HEADERS'] = 'Content-Type'
 # Load environment variables from .env file
 load_dotenv()
+
+
 def preprocess_image(image):
     try:
         # Define the transformation for the input image
@@ -35,6 +41,7 @@ def preprocess_image(image):
     except Exception as e:
         print(f"Error in preprocess_image: {e}")
         return None
+
 
 @app.route('/predict', methods=['POST'])
 @cross_origin()
@@ -91,9 +98,11 @@ def predict_number_class():
         app.logger.warning(f"Error in predict_number_class: {e}")
         return "Internal Server Error", 500
 
+
 @app.route("/")
 def hello():
     return "<h1 style='color:blue'>Hello There!</h1>"
+
 
 # Configure Flask-Mail settings using environment variables
 app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER')
@@ -102,6 +111,8 @@ app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS').lower() in ['true', '1', 
 app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 mail = Mail(app)
+
+
 @app.route('/contact', methods=['POST'])
 @cross_origin()
 def contact_form():
@@ -129,7 +140,6 @@ def contact_form():
         return jsonify({'error': str(e)}), 500
 
 
-
 @app.route('/generate-message', methods=['POST'])
 @cross_origin()
 def generate_message():
@@ -142,7 +152,7 @@ def generate_message():
         api_key = os.getenv('ANTHROPIC_API_KEY')
         if not api_key:
             return jsonify({'error': 'API Key not found'}), 500
-        client = anthropic.Anthropic(api_key=api_key,)
+        client = anthropic.Anthropic(api_key=api_key, )
 
         message = client.beta.tools.messages.create(
             model="claude-3-haiku-20240307",
@@ -174,17 +184,18 @@ def generate_message():
             ]
         )
         if message:
-            if(type(message.content[0]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
+            if (type(message.content[0]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
                 return jsonify({'message': message.content[0].input}), 200
-            elif(type(message.content[1]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
+            elif (type(message.content[1]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
                 return jsonify({'message': message.content[1].input}), 200
-            elif(type(message.content[2]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
+            elif (type(message.content[2]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
                 return jsonify({'message': message.content[2].input}), 200
 
         else:
             return jsonify({'error': 'Failed to generate message in backend'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/complete-sentence', methods=['POST'])
 @cross_origin()
@@ -198,7 +209,7 @@ def complete_sentence():
         api_key = os.getenv('ANTHROPIC_API_KEY')
         if not api_key:
             return jsonify({'error': 'API Key not found'}), 500
-        client = anthropic.Anthropic(api_key=api_key,)
+        client = anthropic.Anthropic(api_key=api_key, )
 
         message = client.beta.tools.messages.create(
             model="claude-3-haiku-20240307",
@@ -225,17 +236,18 @@ def complete_sentence():
             ]
         )
         if message:
-            if(type(message.content[0]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
+            if (type(message.content[0]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
                 return jsonify({'message': message.content[0].input}), 200
-            elif(type(message.content[1]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
+            elif (type(message.content[1]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
                 return jsonify({'message': message.content[1].input}), 200
-            elif(type(message.content[2]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
+            elif (type(message.content[2]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
                 return jsonify({'message': message.content[2].input}), 200
 
         else:
             return jsonify({'error': 'Failed to generate message in backend'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/rephrase-sentence', methods=['POST'])
 @cross_origin()
@@ -249,7 +261,7 @@ def rephrase_sentence():
         api_key = os.getenv('ANTHROPIC_API_KEY')
         if not api_key:
             return jsonify({'error': 'API Key not found'}), 500
-        client = anthropic.Anthropic(api_key=api_key,)
+        client = anthropic.Anthropic(api_key=api_key, )
 
         message = client.beta.tools.messages.create(
             model="claude-3-haiku-20240307",
@@ -286,11 +298,11 @@ def rephrase_sentence():
             ]
         )
         if message:
-            if(type(message.content[0]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
+            if (type(message.content[0]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
                 return jsonify({'message': message.content[0].input}), 200
-            elif(type(message.content[1]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
+            elif (type(message.content[1]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
                 return jsonify({'message': message.content[1].input}), 200
-            elif(type(message.content[2]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
+            elif (type(message.content[2]) == anthropic.types.beta.tools.tool_use_block.ToolUseBlock):
                 return jsonify({'message': message.content[2].input}), 200
 
         else:
@@ -298,5 +310,117 @@ def rephrase_sentence():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/getVideos', methods=["POST", "OPTIONS"])
+@cross_origin()
+def send_videos():
+    if request.method == "OPTIONS":  # CORS preflight
+        return _build_cors_preflight_response()
+    elif request.method == "POST":
+        data = request.get_json()
+        youtube_link = data.get('link', '')
+        count = data.get('count', 4)  # Get the number of videos to generate
+
+        def generate():
+            for video_path, title, description in generate_clip(youtube_link):
+                if not os.path.exists(video_path):
+                    yield json.dumps({"error": f"Video file {title} not found"}) + '\n'
+                    continue
+
+                # Extract the first frame as thumbnail
+                video = cv2.VideoCapture(video_path)
+                success, frame = video.read()
+                if success:
+                    thumbnail_path = video_path.replace('.mp4', '_thumbnail.jpg')
+                    cv2.imwrite(thumbnail_path, frame)
+                video.release()
+
+                # Extract the directory and filename from video_path and thumbnail_path
+                video_dir = os.path.dirname(video_path)
+                video_filename = os.path.basename(video_path)
+                thumbnail_filename = os.path.basename(thumbnail_path)
+
+                # Generate URLs with directory and filename
+                video_url = url_for('serve_video', directory=video_dir, filename=video_filename, _external=True)
+                thumbnail_url = url_for('serve_thumbnail', directory=video_dir, filename=thumbnail_filename, _external=True)
+
+                video_data = {
+                    'id': title,  # You might want to generate a unique ID
+                    'videoUrl': video_url,
+                    'thumbnailUrl': thumbnail_url,
+                    'title': title,
+                    'description': description,
+                }
+                yield json.dumps(video_data) + '\n'
+
+        return Response(stream_with_context(generate()), mimetype='text/event-stream')
+    else:
+        raise RuntimeError("Weird - don't know how to handle method {}".format(request.method))
+
+
+@app.route('/video/<path:directory>/<filename>')
+def serve_video(directory, filename):
+    # Construct the full path using the directory and filename
+    file_path = os.path.join("/" + directory, filename)
+    if os.path.exists(file_path):
+        return send_file(file_path, mimetype='video/mp4')
+    else:
+        return {"error": "File not found"}, 404
+
+@app.route('/thumbnail/<path:directory>/<filename>')
+def serve_thumbnail(directory, filename):
+    # Construct the full path using the directory and filename
+    file_path = os.path.join("/" + directory, filename)
+    if os.path.exists(file_path):
+        return send_file(file_path, mimetype='image/jpeg')
+    else:
+        app.logger.warning(f"Filepath: {file_path}")
+        return {"error": "File not found"}, 404
+
+def _build_cors_preflight_response():
+    response = make_response()
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    response.headers.add('Access-Control-Allow-Headers', "*")
+    response.headers.add('Access-Control-Allow-Methods', "*")
+    return response
+
+def _corsify_actual_response(response):
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    return response
+
 if __name__ == "__main__":
     app.run(host=os.getenv('HOST'))
+
+import time
+def generate():
+    for index in range(1, 3):
+        time.sleep(3)  # Simulate processing time
+        video_directory = 'clips/The German Problem'
+        video_filename = f'highlight_{index}_The German Problem.mp4'
+        video_path = os.path.join(video_directory, video_filename)
+
+        if not os.path.exists(video_path):
+            yield json.dumps({"error": f"Video file {video_filename} not found"}) + '\n'
+            continue
+
+        # Extract the first frame as thumbnail
+        video = cv2.VideoCapture(video_path)
+        success, frame = video.read()
+        if success:
+            thumbnail_path = video_path.replace('.mp4', '_thumbnail.jpg')
+            cv2.imwrite(thumbnail_path, frame)
+        video.release()
+
+        # Get the URLs for the video and thumbnail
+        video_url = url_for('serve_video', filename=os.path.basename(video_path), _external=True)
+        thumbnail_url = url_for('serve_thumbnail', filename=os.path.basename(thumbnail_path), _external=True)
+
+        video_data = {
+            'id': str(index),
+            'videoUrl': video_url,
+            'thumbnailUrl': thumbnail_url,
+            'title': f'Generated Video {index}',
+            'description': f'Description of generated video {index}'
+        }
+
+        yield json.dumps(video_data) + '\n'
