@@ -82,117 +82,73 @@ def find_timestamps_of_passage(words, passage, assembled):
     return start_timestamp, end_timestamp
 
 
-def transcribe_audio(FILE_URL):
-    api_key = os.getenv('ASSEMBLY_API_KEY')
-    aai.settings.api_key = api_key
-    config = aai.TranscriptionConfig(
-      speaker_labels=False,
-      speakers_expected=1
-    )
-    transcriber = aai.Transcriber()
-    transcript = transcriber.transcribe(
-      FILE_URL,
-      config=config
-    )
-    return FILE_URL, transcript
-
-# Sort files by part number
-def get_part_number(filename):
-    match = re.search(r'_part_(\d+)', filename)
-    return int(match.group(1)) if match else 0
-
-
-# Function to adjust timestamps
-def adjust_timestamps(transcripts, durations):
-    cumulative_duration = 0
-    for i, transcript in enumerate(transcripts):
-        for word in transcript.words:
-            word.start += cumulative_duration
-            word.end += cumulative_duration
-        cumulative_duration += durations[i]
-
-
-# Function to get audio duration
-def get_audio_duration(filename):
-    result = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-         "-of", "default=noprint_wrappers=1:nokey=1", filename],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT
-    )
-    return float(result.stdout)
-
-
-# Function to split audio and return durations
-def split_audio(filename, k, TEMP_DIR, parts_dir):
-    duration = get_audio_duration(os.path.join(TEMP_DIR, filename))
-    segment_duration = duration / k
-    base_name, ext = os.path.splitext(filename)
-    durations = []
-    filename = os.path.join(TEMP_DIR, filename)
-    for i in range(k):
-        start_time = i * segment_duration
-        output_filename = os.path.join(parts_dir, f"{base_name}_part_{i + 1}{ext}")
-        print(output_filename)
-        subprocess.run([
-            "ffmpeg", "-i", filename, "-ss", str(start_time), "-t", str(segment_duration),
-            "-c", "copy", output_filename
-        ])
-        durations.append(segment_duration * 1000)  # Store duration in milliseconds
-
-    return durations
-
-
-def download_video_audio_parallel(youtube_url, TEMP_DIR):
+def download_video(youtube_url, TEMP_DIR):
     output_dir = os.path.join(TEMP_DIR, "%(title)s.%(ext)s")
 
-    # Download audio
-    #"res:720,fps:30,+br"
-    #+size,+br
+    # Download video
     result = subprocess.run(
-        ["yt-dlp", "-S", "res:720,fps:30,+br", "--extract-audio", "-k", "-o", output_dir, youtube_url],
+        ["yt-dlp", "-S", "res:720,fps:30,+br", "-o", output_dir, youtube_url],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT
     )
     try:
-        audio_filename = result.stdout.decode().split("[ExtractAudio] Destination: " + str(TEMP_DIR + "/"))[1].split("\n")[0]
         video_file_url = result.stdout.decode().split('Merging formats into "')[1].split('"\n')[0]
     except:
         print("Error: " + result.stdout.decode().split("Error")[0])
+        raise ValueError("Failed to download video")
 
-    extension = audio_filename.split(".")[1]
-    parts_dir = os.path.join(TEMP_DIR, 'parts')
-    os.makedirs(parts_dir)
-    # Split audio into CONCURRENCY_LIMIT fragments and return durations
-    return split_audio(audio_filename, CONCURRENCY_LIMIT, TEMP_DIR, parts_dir), extension, video_file_url
+    return video_file_url
 
+def generate_clip(youtube_url):
+    with tempfile.TemporaryDirectory() as TEMP_DIR:
+        # Download Video
+        print("Downloading Video")
+        temp_video_url = download_video(youtube_url, TEMP_DIR)
 
-def transcribe_audio_parallel(TEMP_DIR, audio_extension, durations):
-    directory_path = os.path.join(TEMP_DIR, 'parts')
-    files = [os.path.join(directory_path, f) for f in os.listdir(directory_path) if f.endswith(audio_extension)]
-    files.sort(key=get_part_number)
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        # Submit tasks returning (filename, transcript) tuple
-        futures = executor.map(transcribe_audio, files)
+        # Get YouTube Transcript
+        print("Getting YouTube Transcript")
+        transcript = get_youtube_captions(youtube_url)
+        if transcript is None:
+            raise ValueError("No YouTube captions found for this video. Unable to proceed.")
 
-        ts = []
-        for file, transcript in futures:
-            try:
-                ts.append(transcript)
-            except Exception as e:
-                print(f"Error transcribing {file}: {e}")
+        # Generate Highlights
+        print("Generating Highlights")
+        message = get_highlights(transcript)
 
-    adjust_timestamps(ts, durations)
-    return ts
+        # Make Clip
+        print("Editing Clips")
+        for highlight in message.content[-1].input:
+            highlight_data = message.content[-1].input[highlight]
+            # Extract title, description, and excerpt from the XML-like string
+            title = extract_xml_content(highlight_data, 'title')
+            description = extract_xml_content(highlight_data, 'description')
+            excerpt = extract_xml_content(highlight_data, 'excerpt')
 
+            start, end = find_timestamps_of_passage(transcript.words, excerpt, False)
+            if start is None or end is None:
+                print("Error From Claude :/")
+                continue
+            video, w, h = edit_video(start, end, temp_video_url)
 
-def fuse_transcript(transcripts):
-    final_transcript = TranscriptInterface()
-    for t in transcripts:
-        final_transcript.text += t.text
-        final_transcript.words += t.words
-    return final_transcript
+            video_title = highlight + "_" + temp_video_url.split(TEMP_DIR + "/")[1]
+            final_dir_path = '/Users/ericnazarenus/Desktop/Rickberd/Development/Web Dev/Portfolio/nazarenus_backend/clips'
+            final_dir = os.path.join(final_dir_path, video_title.split(".")[0].split("_")[2])
+            video_output_url = os.path.join(final_dir, video_title)
+            os.makedirs(final_dir, exist_ok=True)
+            
+            # Add Subtitles
+            print("Adding Subtitles")
+            subtitle_url = create_subtitles(transcript, start, end, final_dir, video_title)
+            video = write_subtitles_to_video(video, subtitle_url, w, h)
 
+            # Add Outro
+            print("Adding Outro")
+            video = add_outro(video)
+            video = add_watermark(video)
+            video.write_videofile(os.path.join(final_dir, video_output_url), codec='libx264', audio_codec='aac')
+
+            print("Saved Clip to: " + os.path.join(final_dir, video_output_url))
+            yield os.path.join(final_dir, video_output_url), title, description
 
 def get_highlights(transcript):
     api_key = os.getenv('ANTHROPIC_API_KEY')
@@ -409,59 +365,6 @@ def extract_xml_content(xml_string, tag):
     pattern = f'<{tag}>(.*?)</{tag}>'
     match = re.search(pattern, xml_string, re.DOTALL)
     return match.group(1).strip() if match else ''
-
-def generate_clip(youtube_url):
-    with tempfile.TemporaryDirectory() as TEMP_DIR:
-        # Download Video / Audio
-        print("Downloading Video")
-        durations, extension, temp_video_url = download_video_audio_parallel(youtube_url, TEMP_DIR)
-
-        # Transcribe Audio
-        print("Transcribing Audio")
-        assembled = False
-        transcript = get_youtube_captions(youtube_url)
-        if transcript is None:
-            print("No Yt Captions found")
-            assembled = True
-            transcript = fuse_transcript(transcribe_audio_parallel(TEMP_DIR, extension, durations))
-
-        # Generate Highlights
-        print("Generating Highlights")
-        message = get_highlights(transcript)
-
-        # Make Clip
-        print("Editing Clips")
-        for highlight in message.content[-1].input:
-            highlight_data = message.content[-1].input[highlight]
-            # Extract title, description, and excerpt from the XML-like string
-            title = extract_xml_content(highlight_data, 'title')
-            description = extract_xml_content(highlight_data, 'description')
-            excerpt = extract_xml_content(highlight_data, 'excerpt')
-
-            start, end = find_timestamps_of_passage(transcript.words, excerpt, assembled)
-            if start is None or end is None:
-                print("Error From Claude :/")
-                continue
-            video, w, h = edit_video(start, end, temp_video_url)
-
-            video_title = highlight + "_" + temp_video_url.split(TEMP_DIR + "/")[1]
-            final_dir_path = '/Users/ericnazarenus/Desktop/Rickberd/Development/Web Dev/Portfolio/nazarenus_backend/clips'
-            final_dir = os.path.join(final_dir_path, video_title.split(".")[0].split("_")[2])
-            video_output_url = os.path.join(final_dir, video_title)
-            os.makedirs(final_dir, exist_ok=True)
-            # Add Subtitles
-            print("Adding Subtitles")
-            subtitle_url = create_subtitles(transcript, start, end, final_dir, video_title)
-            video = write_subtitles_to_video(video, subtitle_url, w, h)
-
-            # Add Outro
-            print("Adding Outro")
-            video = add_outro(video)
-            video = add_watermark(video)
-            video.write_videofile(os.path.join(final_dir, video_output_url), codec='libx264', audio_codec='aac')
-
-            print("Saved Clip to: " + os.path.join(final_dir, video_output_url))
-            yield os.path.join(final_dir, video_output_url), title, description
 
 if __name__ == '__main__':
     generate_clip("https://www.youtube.com/watch?v=kbWLE07NGcw")
