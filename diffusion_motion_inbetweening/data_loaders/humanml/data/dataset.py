@@ -16,6 +16,7 @@ from ..scripts.motion_process import recover_from_ric, extract_features, recover
 from ..utils.paramUtil import *
 from ..common.skeleton import Skeleton
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
 def collate_fn(batch):
     batch.sort(key=lambda x: x[3], reverse=True)
@@ -266,7 +267,8 @@ class Text2MotionDatasetV2(data.Dataset):
 
         data_dict = {}
         id_list = []
-        with cs.open("/Users/ericnazarenus/Desktop/dragbased/backend/diffusion_motion_inbetweening/dataset/HumanML3D/test.txt", 'r') as f:
+        test_file_path = os.path.join(script_dir, "..", "..", "..", "dataset", "HumanML3D", "test.txt")
+        with cs.open(test_file_path, 'r') as f:
             for line in f.readlines():
                 id_list.append(line.strip())
 
@@ -279,12 +281,15 @@ class Text2MotionDatasetV2(data.Dataset):
         for name in tqdm(id_list):
             try:
                 # if True:
-                motion = np.load(pjoin("/Users/ericnazarenus/Desktop/dragbased/backend/diffusion_motion_inbetweening/dataset/HumanML3D/new_joint_vecs_abs_3d", name + '.npy'))
+                motion_file_path = os.path.join(script_dir, "..", "..", "..", "dataset", "HumanML3D", "new_joint_vecs_abs_3d.npy")
+
+                motion = np.load(motion_file_path)
                 if (len(motion)) < min_motion_len or (len(motion) >= 200):
                     continue
                 text_data = []
                 flag = False
-                with cs.open(pjoin("/Users/ericnazarenus/Desktop/dragbased/backend/diffusion_motion_inbetweening/dataset/HumanML3D/texts", name + '.txt')) as f:
+                text_file_path = os.path.join(script_dir, "..", "..", "..", "dataset", "HumanML3D", "texts.txt")
+                with cs.open(text_file_path) as f:
                     for line in f.readlines():
                         text_dict = {}
                         line_split = line.strip().split('#')
@@ -1044,7 +1049,7 @@ class HumanML3D(data.Dataset):
 
         # Configurations of T2M dataset and KIT dataset is almost the same
         abs_base_path = '.'
-        dataset_opt_path = "/Users/ericnazarenus/Desktop/dragbased/backend/diffusion_motion_inbetweening/dataset/humanml_opt.txt"
+        dataset_opt_path = os.path.join(script_dir, "..", "..", "..", "dataset", "humanml_opt.txt")
         device = None  # torch.device('cuda:4') # This param is not in use in this context
         # TODO: modernize get_opt
         opt = get_opt(dataset_opt_path, device, mode, use_abs3d=use_abs3d, max_motion_length=num_frames)
@@ -1100,17 +1105,24 @@ class HumanML3D(data.Dataset):
                 regradless of which dataset is loaded.
                 '''
                 # used by absolute model
-                self.mean = np.load("/Users/ericnazarenus/Desktop/dragbased/backend/diffusion_motion_inbetweening/dataset/HumanML3D/Mean_abs_3d.npy")
-                self.std = np.load("/Users/ericnazarenus/Desktop/dragbased/backend/diffusion_motion_inbetweening/dataset/HumanML3D/Std_abs_3d.npy")
+                mean_file_path = os.path.join(script_dir, "..", "..", "..", "dataset", "HumanML3D", "Mean_abs_3d.npy")
+                self.mean = np.load(mean_file_path)
+                std_file_path = os.path.join(script_dir, "..", "..", "..", "dataset", "HumanML3D", "Std_abs_3d.npy")
+                self.std = np.load(std_file_path)
+            meangt_file_path = os.path.join(script_dir, "..", "..", "..", "dataset", "t2m_mean.npy")
+            stdgt_file_path = os.path.join(script_dir, "..", "..", "..", "dataset", "t2m_std.npy")
+            meanrel_file_path = os.path.join(script_dir, "..", "..", "..", "dataset", "HumanML3D", "Mean.npy")
+            stdrel_file_path = os.path.join(script_dir, "..", "..", "..", "dataset", "HumanML3D", "Std.npy")
+            meanabs_file_path = os.path.join(script_dir, "..", "..", "..", "dataset", "HumanML3D", "Mean_abs_3d.npy")
+            stdabs_file_path = os.path.join(script_dir, "..", "..", "..", "dataset", "HumanML3D", "Std_abs_3d.npy")
 
-            self.mean_gt = np.load(
-                "/Users/ericnazarenus/Desktop/dragbased/backend/diffusion_motion_inbetweening/dataset/t2m_mean.npy")
+            self.mean_gt = np.load(meangt_file_path)
             self.std_gt = np.load(
-                "/Users/ericnazarenus/Desktop/dragbased/backend/diffusion_motion_inbetweening/dataset/t2m_std.npy")
-            self.mean_rel = np.load("/Users/ericnazarenus/Desktop/dragbased/backend/diffusion_motion_inbetweening/dataset/HumanML3D/Mean.npy")
-            self.std_rel = np.load("/Users/ericnazarenus/Desktop/dragbased/backend/diffusion_motion_inbetweening/dataset/HumanML3D/Std.npy")
-            self.mean_abs = np.load("/Users/ericnazarenus/Desktop/dragbased/backend/diffusion_motion_inbetweening/dataset/HumanML3D/Mean_abs_3d.npy")
-            self.std_abs = np.load("/Users/ericnazarenus/Desktop/dragbased/backend/diffusion_motion_inbetweening/dataset/HumanML3D/Std_abs_3d.npy")
+               stdgt_file_path)
+            self.mean_rel = np.load(meanrel_file_path)
+            self.std_rel = np.load(stdrel_file_path)
+            self.mean_abs = np.load(meanabs_file_path)
+            self.std_abs = np.load(stdabs_file_path)
         elif mode == 'gt':
             # used by T2M models (including evaluators)
             self.mean = np.load(
@@ -1177,7 +1189,7 @@ class HumanML3D(data.Dataset):
                                           'in the README file.'
 
         # Load necessay variables for converting raw motion to processed data
-        data_dir = '/Users/ericnazarenus/Desktop/dragbased/backend/diffusion_motion_inbetweening/dataset/000021.npy'
+        data_dir = os.path.join(script_dir, "..", "..", "..", "dataset", "000021.npy")
         self.n_raw_offsets = torch.from_numpy(t2m_raw_offsets)
         self.kinematic_chain = t2m_kinematic_chain
         # Get offsets of target skeleton
