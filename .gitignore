@@ -22,4 +22,6 @@ diffusion_motion_inbetweening/body_models/smpl/
 __pycache__/
 *.pyc
 .DS_Store 
+models/yolo/
+*.weights
 
