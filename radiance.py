@@ -64,16 +64,15 @@ def find_timestamps_of_passage(words, passage, assembled):
         # Check if the passage matches starting from the current word
         for j in range(len(passage_words)):
             # Use fuzzy matching to compare words
-            yt = words[i + j].text.lower()
-            claude = passage_words[j].lower()
             similarity = fuzz.ratio(words[i + j].text.lower(), passage_words[j].lower())
             match_score += similarity
         
         # If the average similarity is above a threshold (e.g., 80%), consider it a match
-        if match_score / len(passage_words) > 80:
+        if match_score / len(passage_words) > 70:
             start_timestamp = words[i].start
             end_timestamp = words[i + len(passage_words) - 1].end
             break
+
     if start_timestamp is None or end_timestamp is None:
         print("Passage:")
         print(passage)
@@ -153,7 +152,7 @@ def generate_clip(youtube_url):
 def get_highlights(transcript):
     api_key = os.getenv('ANTHROPIC_API_KEY')
     client = anthropic.Anthropic(api_key=api_key)
-    prompt = "Please give me the 4 most interesting text excerpts of the given transcript. For each excerpt, provide a short, catchy title for social media and a very brief description. It is important that you return the transcript excerpts written in the exact same way as it was given to you. Transcript: " + transcript.text
+    prompt = "Please give me the 4 most interesting text excerpts of the given transcript. For each excerpt, provide a short, catchy title for social media and a very brief description. It is important that you return the transcript excerpts written in the exact same way AND WORD FOR WORD as it was given to you. Transcript: " + transcript.text
     message = client.messages.create(
         model="claude-3-haiku-20240307",
         max_tokens=1024,
@@ -315,9 +314,27 @@ def create_subtitles(transcript, start, end, output_dir, video_title, ):
 
 
 def write_subtitles_to_video(video, subtitle_url, w, h):
-    screensize = [w , h // 5]
-    generator = lambda txt: TextClip(txt, font='Proxima-Nova-Semibold',size = screensize, method='caption',
-                                     color='white', stroke_color="black", stroke_width=1,)
+    screensize = [w, h // 5]
+    
+    def generator(txt):
+        # Create multiple text clips for the shadow effect
+        clips = [
+            TextClip(txt, font='Proxima-Nova-Semibold', size=screensize, method='caption',
+                     color='black', align='center', interline=-1)
+            for _ in range(8)
+        ]
+        
+        # Create the main white text
+        white_clip = TextClip(txt, font='Proxima-Nova-Semibold', size=screensize, method='caption',
+                              color='white', align='center', interline=-1)
+        
+        # Position the shadow clips around the main text
+        positions = [(1,1), (-1,1), (1,-1), (-1,-1), (0,1), (0,-1), (1,0), (-1,0)]
+        shadows = [clip.set_position((x,y)) for clip, (x,y) in zip(clips, positions)]
+        
+        # Composite all clips
+        return CompositeVideoClip([*shadows, white_clip])
+
     subs = SubtitlesClip(subtitle_url, generator)
     subtitles = SubtitlesClip(subs, generator)
     result = CompositeVideoClip([video, subtitles.set_pos(('center', 'bottom'))])
